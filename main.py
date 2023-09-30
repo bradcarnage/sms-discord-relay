@@ -3,9 +3,10 @@ from discord import TextChannel, Thread, utils
 from discord.ext import commands
 from datetime import datetime, timezone, timedelta
 import asyncio, urllib, base64, json, time, re
+# import GSMEncoding
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
-bot = commands.Bot(command_prefix="!",intents=discord.Intents.all())
+bot = commands.Bot(command_prefix="!",intents=discord.Intents.all()) #intents are required depending on what you wanna do with your bot
 
 class MessageParser(object):
     """AI CONVERSION FROM JAVASCRIPT TO PYTHON (STOLEN FROM WEBUI)
@@ -39,6 +40,9 @@ class MessageParser(object):
             'extendLen': e
         }
     def encodeMessage(self, e):
+        # delete all non-ascii characters, because we don't know what those are lol
+        e = re.sub(r'[^\x00-\x7F]', '', e)
+        # e = e.encode('ascii',errors='ignore')
         d = 0
         c = ""
         if not e:
@@ -62,7 +66,7 @@ class MessageParser(object):
         if not c:
             return ""
         a = self.specialCharsIgnoreWrap
-        return ''.join([chr(int(e, 16)) if e not in a else "" for e in re.findall('([A-Fa-f0-9]{1,4})', c)])
+        return ''.join([chr(int(e, 16)) if e not in a else "" for e in re.findall('([A-Fa-f0-9]{1,4})', c)]).encode('utf-16', 'surrogatepass').decode('utf-16')
     def dec2hex(a):
         return format(a, '04X')
     def hex2char(b):
@@ -112,7 +116,7 @@ class MessageParser(object):
 mp = MessageParser()
 
 class RouterConnection(object):
-    """This RouterConnection is made for a MUAMA Ryoka Portable 4G WiFi Router"""
+    """docstring for RouterConnection"""
     def __init__(self, routerip, adminpw):
         global mp
         super(RouterConnection, self).__init__()
@@ -168,13 +172,16 @@ class RouterConnection(object):
         returndata = []
         if 'messages' in result and len(result['messages']) > 0:
             for entry in reversed(result['messages']):
+                print('itermessage')
                 try:
                     entry['content'] = mp.decodeMessage(entry['content']).strip()
                 except Exception as e:
-                    entry['content'] = f"{entry['content']}\n{str(e)}".strip()
+                    print(e)
+                    print(entry['content'])
+                    # entry['content'] = f"{entry['content']}\n{str(e)}".strip()
+                    entry['content'] = str(e)
                     pass
-                if 'date' in entry:
-                    del entry['date']
+                print('content_checked')
                 # try:
                 #     entry['date'] = mp.decode_datetime_with_offset(entry['date'])
                 # except Exception as e:
@@ -186,6 +193,7 @@ class RouterConnection(object):
                 returndata.append(entry)
                 del_msgs.append(entry['id'])
             await self.delete_messages(del_msgs)
+        print(f'returndata: {returndata}')
         return returndata
 
     async def get_from_router(self, params):
@@ -274,21 +282,28 @@ async def on_message(ctx):
 
 @bot.event
 async def on_ready():
+    # await bot.sync() #sync the command tree
     await bot.tree.sync()
     print("Bot is ready and online")
-    # await rc.send_sms('555-555-5555', 'test1234')
+    # await send_to_thread(bot.get_channel(1157376879511224430), "5599160001", "test message")
+    # await rc.send_sms('5599160001', 'test1234')
     while True:
         messages = await rc.fetch_new_sms()
         for message in messages:
-            message['number'] # phone no of other party
-            message['content'] # converted message, or raw content with error msg
-            message['tag'] # in or out (1 or 2)
-            message['id'] # refrence ID since device reset
+            # message['number'] # phone no of other party
+            # message['content'] # converted message, or raw content with error msg
+            # message['tag'] # in or out (1 or 2)
+            # message['id'] # refrence ID since device reset
             content = message['content']
             print(f"messagetag: {message['tag']}")
+            print(f"messagecontent: {content}")
             if message['tag'] == 1:
                 # log incoming message, escaping any formatting that denotates outgoing
-                content = re.sub('^> |\n> ', '\\> ', content)
+                try:
+                    content = re.sub('^> |\n> ', '\\> ', content)
+                except Exception as e:
+                    print(f"{e}")
+                    pass
             else:
                 # log outgoing message
                 content = '> '+content
@@ -296,7 +311,6 @@ async def on_ready():
             print(f"New message: {message['number']} {content}")
             await send_sms_to_thread(message['number'], content)
         await asyncio.sleep(1)
-
 rc = RouterConnection('192.168.0.1', 'admin')
 sms_channel_id = 000000000000000000
 sms_role_name = "SMS Bot"
